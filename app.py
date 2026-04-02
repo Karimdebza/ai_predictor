@@ -1,10 +1,10 @@
-from flask import Flask, jsonify, render_template
-from model import train_model
+from flask import Flask, jsonify, render_template, request
+from model import train_model, get_historic_data
 import numpy as np
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 
-# entraîner le modèle une seule fois
 model, size = train_model()
 
 @app.route("/gui")
@@ -17,10 +17,28 @@ def home():
 
 @app.route("/predict")
 def predict():
-    next_day = np.array([[size + 1]])
-    prediction = model.predict(next_day)
+    devise = request.args.get('devise', 'MAD')
+    days = int(request.args.get('days', 5))
+
+    historic = get_historic_data(devise) 
+    last_day = size
+
+    pred_dates = []
+    predictions = []
+
+    for i in range(1, days+1):
+        next_day = np.array([[last_day + i]])
+        pred = model.predict(next_day)
+        predictions.append(float(pred[0]))
+        pred_dates.append((datetime.today() + timedelta(days=i)).strftime("%Y-%m-%d"))
+
+    dates = [(datetime.today() - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(len(historic))]
+
     return jsonify({
-        "prediction_EUR_MAD": float(prediction[0])
+        "historic": historic,
+        "predictions": predictions,
+        "dates": dates,
+        "pred_dates": pred_dates
     })
 
 if __name__ == "__main__":

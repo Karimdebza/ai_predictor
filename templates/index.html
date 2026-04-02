@@ -3,29 +3,38 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Prédiction EUR → MAD</title>
-    <!-- Bootstrap CDN -->
+    <title>Prédiction de Taux de Change</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.plot.ly/plotly-2.32.1.min.js"></script>
 </head>
 <body class="bg-light">
 
 <div class="container py-5">
-    <h1 class="text-center mb-4">Prédiction EUR → MAD</h1>
+    <h1 class="text-center mb-4">Prédiction EUR → Devise</h1>
 
-    <div class="card shadow p-4">
-        <p class="mb-3">Cliquez sur le bouton pour obtenir la prédiction du taux de change :</p>
-        <button class="btn btn-primary w-100 mb-3" onclick="predict()">Obtenir taux</button>
-        <h3 class="text-center text-success" id="result"></h3>
+    <div class="card shadow p-4 mb-4">
+        <div class="row mb-3">
+            <div class="col-md-6">
+                <label for="devise" class="form-label">Devise cible :</label>
+                <select id="devise" class="form-select">
+                    <option value="MAD">MAD</option>
+                    <option value="USD">USD</option>
+                    <option value="GBP">GBP</option>
+                    <option value="JPY">JPY</option>
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label for="days" class="form-label">Nombre de jours à prédire :</label>
+                <input type="number" id="days" class="form-control" value="5" min="1" max="30">
+            </div>
+        </div>
+        <button class="btn btn-primary w-100" onclick="predict()">Obtenir prédictions</button>
     </div>
+
+    <div id="chart" class="mt-4"></div>
 </div>
 
-<script>
-async function predict() {
-    const res = await fetch('/predict');
-    const data = await res.json();
-    document.getElementById('result').innerText = "Taux prédit : " + data.prediction_EUR_MAD.toFixed(4) + " MAD";
-}
-</script>
+<script src="./static/script.js"></script>
 
 </body>
 </html>
