@@ -1,13 +1,28 @@
 import requests
+import pandas as pd
+from dotenv import load_dotenv
 
-def get_data():
-    url = "https://api.frankfurter.dev/v2/rate/EUR/MAD"
-    response = requests.get(url)
-    data = response.json()
+load_dotenv()
 
-    # sécurité
-    if "rate" not in data:
-        raise Exception(f"API n'a pas renvoyé 'rate': {data}")
 
-    # retourne une liste pour LinearRegression
-    return [data["rate"]]
+def get_fix_history(to_currency, start_date, end_date):
+    url = "https://api.frankfurter.dev/v2/rates"
+    params = {
+        "from": start_date.strftime("%Y-%m-%d"),
+        "to": end_date.strftime("%Y-%m-%d"),
+        "base": "EUR",
+        "quotes": to_currency
+    }
+
+    resp = requests.get(url, params=params)
+    if resp.status_code != 200:
+        raise Exception(f"Frankfurter API ERROR {resp.status_code}: {resp.text[:200]}")
+
+    data = resp.json()
+    if not isinstance(data, list) or len(data) == 0:
+        raise Exception("Pas de données FX")
+
+    df = pd.DataFrame(data)
+    df["date"] = pd.to_datetime(df["date"])
+    df = df.rename(columns={"rate": "eur_to"})
+    return df[["date", "eur_to"]].sort_values("date").reset_index(drop=True)

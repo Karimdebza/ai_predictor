@@ -1,45 +1,33 @@
 from flask import Flask, jsonify, render_template, request
-from model import train_model, get_historic_data
-import numpy as np
-from datetime import datetime, timedelta
+from model import train_model, predict_future
 
 app = Flask(__name__)
 
-model, size = train_model()
+DEVICES = ["MAD", "USD", "GBP", "JPY"]
 
-@app.route("/gui")
-def gui():
-    return render_template("index.html")
 
 @app.route("/")
 def home():
-    return "API Prediction OK"
+    return render_template("index.html", devices=DEVICES)
+
 
 @app.route("/predict")
 def predict():
-    devise = request.args.get('devise', 'MAD')
-    days = int(request.args.get('days', 5))
+    to_currency = request.args.get("devise", "MAD")
+    days = int(request.args.get("days", 5))
 
-    historic = get_historic_data(devise) 
-    last_day = size
-
-    pred_dates = []
-    predictions = []
-
-    for i in range(1, days+1):
-        next_day = np.array([[last_day + i]])
-        pred = model.predict(next_day)
-        predictions.append(float(pred[0]))
-        pred_dates.append((datetime.today() + timedelta(days=i)).strftime("%Y-%m-%d"))
-
-    dates = [(datetime.today() - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(len(historic))]
+    model, df = train_model(to_currency)
+    pred_dates, predictions, lower, upper = predict_future(model, df, days)
 
     return jsonify({
-        "historic": historic,
+        "dates": df["date"].dt.strftime("%Y-%m-%d").tolist(),
+        "historic": df["eur_to"].tolist(),
+        "pred_dates": [d.strftime("%Y-%m-%d") for d in pred_dates],
         "predictions": predictions,
-        "dates": dates,
-        "pred_dates": pred_dates
+        "lower": lower,
+        "upper": upper,
     })
+
 
 if __name__ == "__main__":
     app.run(debug=True)

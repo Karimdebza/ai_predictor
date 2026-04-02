@@ -1,31 +1,67 @@
 async function predict() {
-    const devise = document.getElementById("devise").value; 
-    const days = parseInt(document.getElementById("days").value);
+    const loading = document.getElementById("loading");
+    const chartDiv = document.getElementById("chart");
 
-    const res = await fetch(`/predict?devise=${devise}&days=${days}`);
-    const data = await res.json();
+    try {
+        const devise = document.getElementById("devise").value;
+        const days = parseInt(document.getElementById("days").value);
 
-   
-    const trace1 = {
-        x: data.dates,
-        y: data.historic,        
-        mode: 'lines+markers',
-        name: 'Historique',
-        line: { color: 'blue' }
-    };
+        if (loading) loading.style.display = "block";
+        if (chartDiv) chartDiv.innerHTML = "";
 
-    const trace2 = {
-        x: data.pred_dates,
-        y: data.predictions,
-        mode: 'lines+markers',
-        name: 'Prédictions',
-        line: { color: 'red', dash: 'dash' }
-    };
+        const res = await fetch(`/predict?devise=${devise}&days=${days}`);
+        const data = await res.json();
 
+        if (loading) loading.style.display = "none";
 
-    Plotly.newPlot('chart', [trace1, trace2], {
-        title: `Prédictions EUR → ${devise}`,
-        xaxis: { title: 'Date' },
-        yaxis: { title: 'Taux' }
-    });
+        if (!data.dates || !data.historic) {
+            alert("Erreur données API");
+            return;
+        }
+
+        const traceHistoric = {
+            x: data.dates,
+            y: data.historic,
+            mode: "lines",
+            name: "Historique",
+            line: { color: "#4f8ef7", width: 2 }
+        };
+
+        const traceConfidence = {
+            x: [...data.pred_dates, ...data.pred_dates.slice().reverse()],
+            y: [...data.upper, ...data.lower.slice().reverse()],
+            fill: "toself",
+            fillcolor: "rgba(255, 150, 50, 0.15)",
+            line: { color: "transparent" },
+            name: "Intervalle de confiance",
+            showlegend: true,
+            type: "scatter"
+        };
+
+        const tracePred = {
+            x: data.pred_dates,
+            y: data.predictions,
+            mode: "lines+markers",
+            name: "Prédiction (Prophet)",
+            line: { color: "#ff9632", width: 2, dash: "dot" },
+            marker: { size: 7 }
+        };
+
+        const layout = {
+            title: `EUR → ${devise} : historique + prédiction Prophet`,
+            xaxis: { title: "Date" },
+            yaxis: { title: `Taux EUR/${devise}` },
+            legend: { orientation: "h", y: -0.2 },
+            hovermode: "x unified",
+            plot_bgcolor: "#fff",
+            paper_bgcolor: "#f8f9fa"
+        };
+
+        Plotly.newPlot("chart", [traceHistoric, traceConfidence, tracePred], layout);
+
+    } catch (err) {
+        if (loading) loading.style.display = "none";
+        console.error(err);
+        alert("Erreur JS → regarde la console");
+    }
 }

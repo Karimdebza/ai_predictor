@@ -1,24 +1,56 @@
-import numpy as np
 import pandas as pd
-import requests
-from sklearn.linear_model import LinearRegression
+from prophet import Prophet
+from data import get_fix_history
 
-def get_historic_data(devise="MAD", days=30):
-    # récupère les 30 derniers jours depuis l'API Frankfurter
-    end = pd.Timestamp.today()
-    start = end - pd.Timedelta(days=days)
-    url = f"https://api.frankfurter.dev/v2/rate/EUR/{devise}?start_date={start.date()}&end_date={end.date()}"
-    r = requests.get(url)
-    data = r.json()
 
-    # le retour dépend de l'API v2
-    historic = list(data.get("rate", [10]*days))  # fallback si l'API change
-    return historic
+def train_model(to_currency="MAD"):
+    end_date = pd.Timestamp.today().normalize()
+    start_date = end_date - pd.Timedelta(days=365)
 
-def train_model():
-    # modèle simple linéaire
-    size = 100
-    X = np.arange(size).reshape(-1,1)
-    y = np.linspace(10, 11, size)  # mock taux EUR->MAD
-    model = LinearRegression().fit(X, y)
-    return model, size
+    fx = get_fix_history(to_currency, start_date, end_date)
+    df = fx.copy()
+
+    # Features techniques calculées depuis l'historique FX
+    df["ma7"] = df["eur_to"].rolling(7).mean()
+    df["volatility7"] = df["eur_to"].rolling(7).std()
+    df = df.dropna().reset_index(drop=True)
+
+    # Prophet attend ds + y
+    prophet_df = df[["date", "eur_to", "ma7", "volatility7"]].rename(
+        columns={"date": "ds", "eur_to": "y"}
+    )
+
+    model = Prophet(
+        daily_seasonality=False,
+        weekly_seasonality=True,
+        yearly_seasonality=True,
+        changepoint_prior_scale=0.05,
+    )
+    model.add_regressor("ma7")
+    model.add_regressor("volatility7")
+    model.fit(prophet_df)
+
+    return model, df
+
+
+def predict_future(model, df, days=5):
+    last_date = df["date"].iloc[-1]
+    future_rows = []
+
+    for i in range(1, days + 1):
+        # On projette ma7 et volatility7 avec les dernières valeurs connues
+        future_rows.append({
+            "ds": last_date + pd.Timedelta(days=i),
+            "ma7": df["ma7"].iloc[-1],
+            "volatility7": df["volatility7"].iloc[-1],
+        })
+
+    future_df = pd.DataFrame(future_rows)
+    forecast = model.predict(future_df)
+
+    pred_dates = forecast["ds"].tolist()
+    predictions = forecast["yhat"].tolist()
+    lower = forecast["yhat_lower"].tolist()
+    upper = forecast["yhat_upper"].tolist()
+
+    return pred_dates, predictions, lower, upper
