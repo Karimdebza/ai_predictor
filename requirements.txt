@@ -6,3 +6,4 @@ requests
 gunicorn
 datetime
 prophet
+dotenv
