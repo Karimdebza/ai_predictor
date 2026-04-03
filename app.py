@@ -1,12 +1,14 @@
 from flask import Flask, jsonify, render_template, request
 from flask_cors import CORS
-from model import train_model, predict_future
+from model import train_model, predict_future, backtest
 
 app = Flask(__name__)
+# CORS(app, origins=["https://fx-dashboard-beta.vercel.app/"])
 CORS(app)
 
 DEVICES = ["MAD", "USD", "GBP", "JPY"]
 _cache = {}
+_backtest_cache = {}
 
 @app.route("/")
 def home():
@@ -39,6 +41,20 @@ def predict():
             "lower": lower,
             "upper": upper,
         })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/backtest")
+def run_backtest():
+    to_currency = request.args.get("devise", "MAD").upper()
+    
+    if to_currency not in DEVICES:
+        return jsonify({"error": "Devise non supportée"}), 400
+    
+    try:
+        if to_currency not in _backtest_cache:
+            _backtest_cache[to_currency] = backtest(to_currency)
+        return jsonify(_backtest_cache[to_currency])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
