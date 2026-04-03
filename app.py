@@ -3,7 +3,7 @@ from flask_cors import CORS
 from model import train_model, predict_future, backtest
 
 app = Flask(__name__)
-CORS(app, origins=["https://fx-dashboard-beta.vercel.app/"])
+CORS(app, origins=["https://fx-dashboard-9yq303706-karimdebzas-projects.vercel.app/"])
 # CORS(app)
 
 DEVICES = ["MAD", "USD", "GBP", "JPY"]
