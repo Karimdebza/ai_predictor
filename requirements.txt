@@ -7,3 +7,4 @@ gunicorn
 datetime
 prophet
 dotenv
+flask-cors
