@@ -8,3 +8,4 @@ datetime
 prophet
 dotenv
 flask-cors
+pytest
