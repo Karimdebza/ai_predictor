@@ -1,0 +1,7 @@
+venv/
+__pycache__/
+*.pyc
+.env
+fx-dashboard/
+node_modules/
+*.log

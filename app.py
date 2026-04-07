@@ -1,14 +1,15 @@
 from flask import Flask, jsonify, render_template, request
 from flask_cors import CORS
 from model import train_model, predict_future, backtest
+from cache import get_cache, is_rate_limited, set_cache
+import time
 
 app = Flask(__name__)
 # CORS(app, origins=["https://fx-dashboard-9yq303706-karimdebzas-projects.vercel.app/"])
 CORS(app)
 
 DEVICES = ["MAD", "USD", "GBP", "JPY"]
-_cache = {}
-_backtest_cache = {}
+
 
 @app.route("/")
 def home():
@@ -20,6 +21,10 @@ def health():
 
 @app.route("/predict")
 def predict():
+    ip = request.remote_addr
+
+    if is_rate_limited(ip):
+        return jsonify({"error": "Too many requests"}), 429
     to_currency = request.args.get("devise", "MAD").upper()
     days = int(request.args.get("days", 5))
 
@@ -27,34 +32,58 @@ def predict():
         return jsonify({"error": "Devise non supportée"}), 400
 
     try:
-        if to_currency not in _cache:
-            _cache[to_currency] = train_model(to_currency)
-        model, df = _cache[to_currency]
+        cache_key = f"predict:{to_currency}:{days}"
+        cached = get_cache(cache_key)
+
+        if cached:
+             print("🔥 CACHE HIT")
+             return jsonify(cached)
+        else:
+            print("❌ CACHE MISS")
+            model, df = train_model(to_currency)
+            # On stocke pas le modèle Prophet dans Redis
+            # On recalcule si pas en mémoire
+            pass
 
         pred_dates, predictions, lower, upper = predict_future(model, df, days)
 
-        return jsonify({
+        result = {
             "dates": df["date"].dt.strftime("%Y-%m-%d").tolist(),
             "historic": df["eur_to"].tolist(),
             "pred_dates": [d.strftime("%Y-%m-%d") for d in pred_dates],
             "predictions": predictions,
             "lower": lower,
             "upper": upper,
-        })
+        }
+
+        set_cache(f"predict:{to_currency}:{days}", result, ttl=3600)
+        return jsonify(result)
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 @app.route("/backtest")
 def run_backtest():
+    ip = request.remote_addr
+
+    if is_rate_limited(ip):
+        return jsonify({"error": "Too many requests"}), 429  
     to_currency = request.args.get("devise", "MAD").upper()
-    
+
     if to_currency not in DEVICES:
         return jsonify({"error": "Devise non supportée"}), 400
-    
+
     try:
-        if to_currency not in _backtest_cache:
-            _backtest_cache[to_currency] = backtest(to_currency)
-        return jsonify(_backtest_cache[to_currency])
+        cache_key = f"backtest:{to_currency}"
+        cached = get_cache(cache_key)
+
+        if cached:
+            return jsonify(cached)
+
+        result = backtest(to_currency)
+        set_cache(cache_key, result, ttl=3600)
+        return jsonify(result)
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

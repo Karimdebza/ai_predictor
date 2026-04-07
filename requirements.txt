@@ -9,3 +9,4 @@ prophet
 dotenv
 flask-cors
 pytest
+redis
