@@ -19,8 +19,8 @@ def set_cache(key:str, value:dict, ttl: int =3600):
     except Exception as e:
         pass
 
-RATE_LIMIT= 5
-WINDOW = 10
+RATE_LIMIT = 60
+WINDOW = 60  # 60 req / minute
 
 def is_rate_limited(ip: str):
     key = f"rate:{ip}"

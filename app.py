@@ -21,7 +21,7 @@ def health():
 
 @app.route("/predict")
 def predict():
-    ip = request.remote_addr
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr)
 
     if is_rate_limited(ip):
         return jsonify({"error": "Too many requests"}), 429
@@ -64,7 +64,7 @@ def predict():
 
 @app.route("/backtest")
 def run_backtest():
-    ip = request.remote_addr
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr)
 
     if is_rate_limited(ip):
         return jsonify({"error": "Too many requests"}), 429  
