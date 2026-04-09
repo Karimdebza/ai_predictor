@@ -87,5 +87,39 @@ def run_backtest():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/compare")
+def compare():
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    if is_rate_limited(ip):
+        return jsonify({"error": "Too many requests"}), 429
+    days = int(request.args.get("days", 5))
+    results = {}
+
+    for dev in DEVICES:
+        try:
+            cache_key = f"predict:{dev}:{days}"
+            cached = get_cache(cache_key)
+
+            if cached:
+                results[dev] = cached
+            else:
+                model, df = train_model(dev)
+                pred_dates, predictions, lower, upper = predict_future(model, df, days)
+                data = {
+                    "dates": df["date"].dt.strftime("%Y-%m-%d").tolist(),
+                    "historic": df["eur_to"].tolist(),
+                    "pred_dates": [d.strftime("%Y-%m-%d") for d in pred_dates],
+                    "predictions": predictions,
+                    "lower": lower,
+                    "upper": upper,
+                }
+                set_cache(cache_key, data, ttl=3600)
+                results[dev] = data
+
+        except Exception as e:
+            results[dev] = {"error": str(e)}
+    return jsonify(results)
+
+
 if __name__ == "__main__":
     app.run(debug=True)
