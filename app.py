@@ -3,7 +3,8 @@ from flask_cors import CORS
 from model import train_model, predict_future, backtest
 from cache import get_cache, is_rate_limited, set_cache
 import time
-
+import logging
+logger = logging.getLogger(__name__)
 app = Flask(__name__)
 # CORS(app, origins=["https://fx-dashboard-9yq303706-karimdebzas-projects.vercel.app/"])
 CORS(app)
@@ -36,10 +37,10 @@ def predict():
         cached = get_cache(cache_key)
 
         if cached:
-             print("🔥 CACHE HIT")
+             logger.info("Cache HIT pour %s", cache_key)
              return jsonify(cached)
         else:
-            print("❌ CACHE MISS")
+            logger.info("Cache MISS pour %s", cache_key)
             model, df = train_model(to_currency)
             # On stocke pas le modèle Prophet dans Redis
             # On recalcule si pas en mémoire
