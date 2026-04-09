@@ -1,10 +1,10 @@
 flask
 numpy
 pandas
-scikit-learn
+# scikit-learn
 requests
 gunicorn
-datetime
+# datetime
 prophet
 dotenv
 flask-cors

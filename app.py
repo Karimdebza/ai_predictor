@@ -2,7 +2,6 @@ from flask import Flask, jsonify, render_template, request
 from flask_cors import CORS
 from model import train_model, predict_future, backtest
 from cache import get_cache, is_rate_limited, set_cache
-import time
 import logging
 logger = logging.getLogger(__name__)
 app = Flask(__name__)

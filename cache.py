@@ -12,6 +12,12 @@ if REDIS_URL:
 else:
 
     r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+
+try:
+    r.ping()
+    print("✅ Redis connecté :", REDIS_URL or f"{REDIS_HOST}:{REDIS_PORT}")
+except Exception as e:
+    print("❌ Redis non disponible :", e)
 def get_cache(key:str):
     try:
         data = r.get(key)
