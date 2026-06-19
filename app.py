@@ -1,4 +1,6 @@
 import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import config
 
@@ -22,23 +24,19 @@ def _client_ip():
 
 
 def _parse_days():
-    """Renvoie (days, erreur). erreur est None si la valeur est valide."""
     raw = request.args.get("days", "5")
     try:
         days = int(raw)
     except ValueError:
         return None, ("Paramètre 'days' invalide", 400)
-
     if not (config.MIN_DAYS <= days <= config.MAX_DAYS):
         return None, (f"'days' doit être entre {config.MIN_DAYS} et {config.MAX_DAYS}", 400)
-
     return days, None
 
 
 def _build_prediction(to_currency, days):
     model, df = get_or_train_model(to_currency)
     pred_dates, predictions, lower, upper = predict_future(model, df, days)
-
     return {
         "dates": df["date"].dt.strftime("%Y-%m-%d").tolist(),
         "historic": df["eur_to"].tolist(),
@@ -47,6 +45,28 @@ def _build_prediction(to_currency, days):
         "lower": lower,
         "upper": upper,
     }
+
+
+def _prewarm():
+    """Entraîne les 4 modèles en parallèle au démarrage pour que le
+    premier vrai appel utilisateur trouve les modèles déjà chauds."""
+    logger.info("Pre-warm : démarrage entraînement des %d devises", len(DEVICES))
+
+    def _train_one(dev):
+        try:
+            get_or_train_model(dev)
+            logger.info("Pre-warm OK : %s", dev)
+        except Exception:
+            logger.warning("Pre-warm échoué pour %s", dev, exc_info=True)
+
+    with ThreadPoolExecutor(max_workers=len(DEVICES)) as ex:
+        list(ex.map(_train_one, DEVICES))
+
+    logger.info("Pre-warm terminé — tous les modèles sont prêts")
+
+
+# Lancement en arrière-plan dès le démarrage (ne bloque pas Flask)
+threading.Thread(target=_prewarm, daemon=True).start()
 
 
 @app.errorhandler(Exception)
@@ -82,10 +102,10 @@ def predict():
     cache_key = f"predict:{to_currency}:{days}"
     cached = get_cache(cache_key)
     if cached:
-        logger.info("Cache HIT pour %s", cache_key)
+        logger.info("Cache HIT %s", cache_key)
         return jsonify(cached)
 
-    logger.info("Cache MISS pour %s", cache_key)
+    logger.info("Cache MISS %s", cache_key)
     result = _build_prediction(to_currency, days)
     set_cache(cache_key, result)
     return jsonify(result)
@@ -120,21 +140,40 @@ def compare():
         message, status = error
         return jsonify({"error": message}), status
 
+    # Vérifier d'abord le cache pour chaque devise
     results = {}
-    for dev in DEVICES:
-        try:
-            cache_key = f"predict:{dev}:{days}"
-            cached = get_cache(cache_key)
+    to_compute = []
 
-            if cached:
-                results[dev] = cached
-            else:
-                data = _build_prediction(dev, days)
-                set_cache(cache_key, data)
+    for dev in DEVICES:
+        cache_key = f"predict:{dev}:{days}"
+        cached = get_cache(cache_key)
+        if cached:
+            logger.info("Cache HIT compare:%s:%s", dev, days)
+            results[dev] = cached
+        else:
+            to_compute.append(dev)
+
+    if not to_compute:
+        return jsonify(results)
+
+    # Entraîner les devises manquantes en parallèle
+    logger.info("Compare : %d devise(s) à calculer en parallèle : %s", len(to_compute), to_compute)
+
+    def _compute(dev):
+        data = _build_prediction(dev, days)
+        set_cache(f"predict:{dev}:{days}", data)
+        return dev, data
+
+    with ThreadPoolExecutor(max_workers=len(to_compute)) as ex:
+        futures = {ex.submit(_compute, dev): dev for dev in to_compute}
+        for future in as_completed(futures):
+            dev = futures[future]
+            try:
+                _, data = future.result()
                 results[dev] = data
-        except Exception as e:
-            logger.exception("Échec de prédiction pour %s", dev)
-            results[dev] = {"error": "Prédiction indisponible pour cette devise"}
+            except Exception:
+                logger.exception("Échec prédiction parallèle pour %s", dev)
+                results[dev] = {"error": "Prédiction indisponible pour cette devise"}
 
     return jsonify(results)
 
