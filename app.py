@@ -48,21 +48,47 @@ def _build_prediction(to_currency, days):
 
 
 def _prewarm():
-    """Entraîne les 4 modèles en parallèle au démarrage pour que le
-    premier vrai appel utilisateur trouve les modèles déjà chauds."""
-    logger.info("Pre-warm : démarrage entraînement des %d devises", len(DEVICES))
+    """Entraîne les modèles + backtest en parallèle au démarrage.
+    Avec gunicorn --workers 1 --threads N, le cache mémoire est partagé
+    entre tous les threads → chaque utilisateur bénéficie du pre-warm."""
+    logger.info("Pre-warm : démarrage (%d devises)", len(DEVICES))
 
-    def _train_one(dev):
+    def _warm_predict(dev):
         try:
-            get_or_train_model(dev)
-            logger.info("Pre-warm OK : %s", dev)
+            model, df = get_or_train_model(dev)
+            # Pré-calcule et met en cache le résultat pour les jours par défaut
+            for days in (5, 7):
+                key = f"predict:{dev}:{days}"
+                if not get_cache(key):
+                    set_cache(key, _build_prediction(dev, days))
+            logger.info("Pre-warm predict OK : %s", dev)
         except Exception:
-            logger.warning("Pre-warm échoué pour %s", dev, exc_info=True)
+            logger.warning("Pre-warm predict échoué pour %s", dev, exc_info=True)
 
-    with ThreadPoolExecutor(max_workers=len(DEVICES)) as ex:
-        list(ex.map(_train_one, DEVICES))
+    def _warm_backtest(dev):
+        try:
+            key = f"backtest:{dev}"
+            if not get_cache(key):
+                result = backtest(dev)
+                set_cache(key, result)
+            logger.info("Pre-warm backtest OK : %s", dev)
+        except Exception:
+            logger.warning("Pre-warm backtest échoué pour %s", dev, exc_info=True)
 
-    logger.info("Pre-warm terminé — tous les modèles sont prêts")
+    # Predict + backtest pour toutes les devises en parallèle (8 tâches)
+    tasks = [(dev, kind) for dev in DEVICES for kind in ("predict", "backtest")]
+
+    def _run(task):
+        dev, kind = task
+        if kind == "predict":
+            _warm_predict(dev)
+        else:
+            _warm_backtest(dev)
+
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        list(ex.map(_run, tasks))
+
+    logger.info("Pre-warm terminé — predict + backtest prêts pour toutes les devises")
 
 
 # Lancement en arrière-plan dès le démarrage (ne bloque pas Flask)
