@@ -1,11 +1,11 @@
-FROM python:3.14.3
+FROM python:3.13-slim
 
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
-    &&rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 
