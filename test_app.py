@@ -84,7 +84,7 @@ class TestPredict:
     def test_predict_all_devises(self, client):
         with patch("app.train_model", return_value=(MagicMock(), make_mock_df())), \
              patch("app.predict_future", return_value=(MOCK_PRED_DATES, MOCK_PREDICTIONS, MOCK_LOWER, MOCK_UPPER)):
-            for devise in ("MAD", "USD", "GBP", "JPY"):
+            for devise in ("MAD", "USD", "GBP", "JPY", "VND"):
                 resp = client.get(f"/predict?devise={devise}&days=5")
                 assert resp.status_code == 200, f"Échec pour la devise {devise}"
 
@@ -147,7 +147,7 @@ class TestBacktest:
 
     def test_backtest_all_devises(self, client):
         with patch("app.backtest", return_value=MOCK_BACKTEST_RESULT):
-            for devise in ("MAD", "USD", "GBP", "JPY"):
+            for devise in ("MAD", "USD", "GBP", "JPY", "VND"):
                 resp = client.get(f"/backtest?devise={devise}")
                 assert resp.status_code == 200
 

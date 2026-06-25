@@ -16,7 +16,7 @@ from cache import get_cache, is_rate_limited, is_redis_available, set_cache
 app = Flask(__name__)
 CORS(app, origins=config.CORS_ORIGINS)
 
-DEVICES = ["MAD", "USD", "GBP", "JPY"]
+DEVICES = ["MAD", "USD", "GBP", "JPY", "VND"]
 
 
 def _client_ip():
