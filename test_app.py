@@ -10,11 +10,13 @@ from app import app
 @pytest.fixture
 def client():
     app.config["TESTING"] = True
-    # Vide le cache entre chaque test pour éviter les effets de bord
-    with patch.dict("app._cache", {}, clear=True), \
-         patch.dict("app._backtest_cache", {}, clear=True):
-        with app.test_client() as client:
-            yield client
+    import cache as cache_module
+    import model as model_module
+    cache_module._mem.clear()
+    cache_module._rate_mem.clear()
+    model_module._model_cache.clear()
+    with app.test_client() as client:
+        yield client
 
 
 # ─── Données mock ─────────────────────────────────────────────────────────────
@@ -58,31 +60,31 @@ class TestHealth:
 class TestPredict:
 
     def test_predict_returns_200(self, client):
-        with patch("app.train_model", return_value=(MagicMock(), make_mock_df())), \
+        with patch("app.get_or_train_model", return_value=(MagicMock(), make_mock_df())), \
              patch("app.predict_future", return_value=(MOCK_PRED_DATES, MOCK_PREDICTIONS, MOCK_LOWER, MOCK_UPPER)):
             assert client.get("/predict?devise=USD&days=5").status_code == 200
 
     def test_predict_response_keys(self, client):
-        with patch("app.train_model", return_value=(MagicMock(), make_mock_df())), \
+        with patch("app.get_or_train_model", return_value=(MagicMock(), make_mock_df())), \
              patch("app.predict_future", return_value=(MOCK_PRED_DATES, MOCK_PREDICTIONS, MOCK_LOWER, MOCK_UPPER)):
             data = client.get("/predict?devise=USD&days=5").get_json()
         for key in ("dates", "historic", "pred_dates", "predictions", "lower", "upper"):
             assert key in data, f"Clé manquante : {key}"
 
     def test_predict_pred_dates_formatted(self, client):
-        with patch("app.train_model", return_value=(MagicMock(), make_mock_df())), \
+        with patch("app.get_or_train_model", return_value=(MagicMock(), make_mock_df())), \
              patch("app.predict_future", return_value=(MOCK_PRED_DATES, MOCK_PREDICTIONS, MOCK_LOWER, MOCK_UPPER)):
             data = client.get("/predict?devise=USD&days=2").get_json()
         assert data["pred_dates"] == ["2025-01-04", "2025-01-05"]
 
     def test_predict_lower_upper_same_length(self, client):
-        with patch("app.train_model", return_value=(MagicMock(), make_mock_df())), \
+        with patch("app.get_or_train_model", return_value=(MagicMock(), make_mock_df())), \
              patch("app.predict_future", return_value=(MOCK_PRED_DATES, MOCK_PREDICTIONS, MOCK_LOWER, MOCK_UPPER)):
             data = client.get("/predict?devise=USD&days=5").get_json()
         assert len(data["lower"]) == len(data["upper"])
 
     def test_predict_all_devises(self, client):
-        with patch("app.train_model", return_value=(MagicMock(), make_mock_df())), \
+        with patch("app.get_or_train_model", return_value=(MagicMock(), make_mock_df())), \
              patch("app.predict_future", return_value=(MOCK_PRED_DATES, MOCK_PREDICTIONS, MOCK_LOWER, MOCK_UPPER)):
             for devise in ("MAD", "USD", "GBP", "JPY", "VND"):
                 resp = client.get(f"/predict?devise={devise}&days=5")
@@ -90,7 +92,7 @@ class TestPredict:
 
     def test_predict_missing_devise_uses_default_mad(self, client):
         """Sans paramètre devise, MAD est la valeur par défaut → doit passer."""
-        with patch("app.train_model", return_value=(MagicMock(), make_mock_df())), \
+        with patch("app.get_or_train_model", return_value=(MagicMock(), make_mock_df())), \
              patch("app.predict_future", return_value=(MOCK_PRED_DATES, MOCK_PREDICTIONS, MOCK_LOWER, MOCK_UPPER)):
             assert client.get("/predict?days=5").status_code == 200
 
@@ -100,20 +102,20 @@ class TestPredict:
         assert "error" in response.get_json()
 
     def test_predict_train_model_error_returns_500(self, client):
-        with patch("app.train_model", side_effect=Exception("Frankfurter timeout")):
+        with patch("app.get_or_train_model", side_effect=Exception("Frankfurter timeout")):
             response = client.get("/predict?devise=USD&days=5")
         assert response.status_code == 500
         assert "error" in response.get_json()
 
     def test_predict_predict_future_error_returns_500(self, client):
-        with patch("app.train_model", return_value=(MagicMock(), make_mock_df())), \
+        with patch("app.get_or_train_model", return_value=(MagicMock(), make_mock_df())), \
              patch("app.predict_future", side_effect=Exception("Prophet error")):
             response = client.get("/predict?devise=USD&days=5")
         assert response.status_code == 500
 
     def test_predict_cache_hit_does_not_retrain(self, client):
-        """Deux appels pour la même devise → train_model appelé une seule fois."""
-        with patch("app.train_model", return_value=(MagicMock(), make_mock_df())) as mock_train, \
+        """Deux appels pour la même devise + jours différents → train_model une seule fois (model_cache)."""
+        with patch("model.train_model", return_value=(MagicMock(), make_mock_df())) as mock_train, \
              patch("app.predict_future", return_value=(MOCK_PRED_DATES, MOCK_PREDICTIONS, MOCK_LOWER, MOCK_UPPER)):
             client.get("/predict?devise=USD&days=5")
             client.get("/predict?devise=USD&days=3")
