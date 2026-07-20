@@ -175,6 +175,46 @@ class TestBacktest:
             assert mock_bt.call_count == 1
 
 
+# ─── /alerts ─────────────────────────────────────────────────────────────────
+
+MOCK_ALERTS = [
+    {"title": "Tensions autour du détroit d'Ormuz", "url": "https://example.com/a", "source": "example.com", "seendate": "20260720T100000Z"},
+]
+
+
+class TestAlerts:
+
+    def test_alerts_returns_200(self, client):
+        with patch("app.fetch_alerts", return_value=MOCK_ALERTS):
+            assert client.get("/alerts?devise=USD").status_code == 200
+
+    def test_alerts_response_structure(self, client):
+        with patch("app.fetch_alerts", return_value=MOCK_ALERTS):
+            data = client.get("/alerts?devise=USD").get_json()
+        assert "alerts" in data
+        assert data["alerts"] == MOCK_ALERTS
+
+    def test_alerts_empty_when_gdelt_unavailable(self, client):
+        """fetch_alerts dégrade en liste vide plutôt que lever une exception."""
+        with patch("app.fetch_alerts", return_value=[]):
+            data = client.get("/alerts?devise=USD").get_json()
+        assert data["alerts"] == []
+
+    def test_alerts_unsupported_devise_returns_400(self, client):
+        response = client.get("/alerts?devise=XYZ")
+        assert response.status_code == 400
+
+    def test_alerts_missing_devise_uses_default_mad(self, client):
+        with patch("app.fetch_alerts", return_value=[]):
+            assert client.get("/alerts").status_code == 200
+
+    def test_alerts_cache_hit_does_not_recall_gdelt(self, client):
+        with patch("app.fetch_alerts", return_value=MOCK_ALERTS) as mock_fetch:
+            client.get("/alerts?devise=USD")
+            client.get("/alerts?devise=USD")
+            assert mock_fetch.call_count == 1
+
+
 # ─── CORS ────────────────────────────────────────────────────────────────────
 
 # class TestCORS:

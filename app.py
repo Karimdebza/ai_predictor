@@ -12,6 +12,9 @@ from flask_cors import CORS
 
 from model import get_or_train_model, predict_future, backtest
 from cache import get_cache, is_rate_limited, is_redis_available, set_cache
+from news import fetch_alerts
+
+ALERTS_CACHE_TTL = 900  # 15 min : les news bougent plus vite que les prédictions FX
 
 app = Flask(__name__)
 CORS(app, origins=config.CORS_ORIGINS)
@@ -202,6 +205,25 @@ def compare():
                 results[dev] = {"error": "Prédiction indisponible pour cette devise"}
 
     return jsonify(results)
+
+
+@app.route("/alerts")
+def alerts():
+    if is_rate_limited(_client_ip()):
+        return jsonify({"error": "Too many requests"}), 429
+
+    to_currency = request.args.get("devise", "MAD").upper()
+    if to_currency not in DEVICES:
+        return jsonify({"error": "Devise non supportée"}), 400
+
+    cache_key = f"alerts:{to_currency}"
+    cached = get_cache(cache_key)
+    if cached is not None:
+        return jsonify(cached)
+
+    result = {"alerts": fetch_alerts(to_currency)}
+    set_cache(cache_key, result, ttl=ALERTS_CACHE_TTL)
+    return jsonify(result)
 
 
 if __name__ == "__main__":

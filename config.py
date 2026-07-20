@@ -1,5 +1,9 @@
 import os
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 DEBUG = os.getenv("FLASK_DEBUG", "false").lower() == "true"
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 
@@ -21,3 +25,5 @@ MIN_DAYS = int(os.getenv("MIN_DAYS", 1))
 MAX_DAYS = int(os.getenv("MAX_DAYS", 30))
 
 FX_API_TIMEOUT = int(os.getenv("FX_API_TIMEOUT", 10))
+
+FRED_API_KEY = os.getenv("FED_API_KEY", "")

@@ -2,7 +2,7 @@ import time
 
 import pandas as pd
 from prophet import Prophet
-from data import get_fix_history
+from data import get_fix_history, get_oil_price_history
 import numpy as np
 
 import config
@@ -10,10 +10,19 @@ import config
 _model_cache = {}
 
 
-def _add_features(df):
+def _add_features(df, oil_df):
     df = df.copy()
     df["ma7"] = df["eur_to"].rolling(7).mean()
     df["volatility7"] = df["eur_to"].rolling(7).std()
+
+    if not oil_df.empty:
+        df = df.merge(oil_df, on="date", how="left")
+        # Le Brent ne cote pas les jours fériés US ; on prolonge la dernière valeur connue.
+        df["oil_price"] = df["oil_price"].ffill().bfill()
+    else:
+        df["oil_price"] = 0.0
+    df["oil_price"] = df["oil_price"].fillna(0.0)
+
     df = df.dropna().reset_index(drop=True)
 
     if df.empty:
@@ -31,6 +40,7 @@ def _fit_prophet(prophet_df):
     )
     model.add_regressor("ma7")
     model.add_regressor("volatility7")
+    model.add_regressor("oil_price")
     model.fit(prophet_df)
     return model
 
@@ -40,10 +50,11 @@ def train_model(to_currency="MAD"):
     start_date = end_date - pd.Timedelta(days=365)
 
     fx = get_fix_history(to_currency, start_date, end_date)
-    df = _add_features(fx)
+    oil = get_oil_price_history(start_date, end_date)
+    df = _add_features(fx, oil)
 
     # Prophet attend ds + y
-    prophet_df = df[["date", "eur_to", "ma7", "volatility7"]].rename(
+    prophet_df = df[["date", "eur_to", "ma7", "volatility7", "oil_price"]].rename(
         columns={"date": "ds", "eur_to": "y"}
     )
 
@@ -71,11 +82,12 @@ def predict_future(model, df, days=5):
     future_rows = []
 
     for i in range(1, days + 1):
-        # On projette ma7 et volatility7 avec les dernières valeurs connues
+        # On projette ma7, volatility7 et oil_price avec les dernières valeurs connues
         future_rows.append({
             "ds": last_date + pd.Timedelta(days=i),
             "ma7": df["ma7"].iloc[-1],
             "volatility7": df["volatility7"].iloc[-1],
+            "oil_price": df["oil_price"].iloc[-1],
         })
 
     future_df = pd.DataFrame(future_rows)
@@ -94,13 +106,14 @@ def backtest(to_currency="MAD"):
     start_date = end_date - pd.Timedelta(days=365)
 
     fx = get_fix_history(to_currency, start_date, end_date)
-    df = _add_features(fx)
+    oil = get_oil_price_history(start_date, end_date)
+    df = _add_features(fx, oil)
 
     cut_off = len(df) - 7
     train_df = df.iloc[:cut_off].copy()
     test_df = df.iloc[cut_off:].copy()
 
-    prophet_df = train_df[["date", "eur_to", "ma7", "volatility7"]].rename(
+    prophet_df = train_df[["date", "eur_to", "ma7", "volatility7", "oil_price"]].rename(
         columns={"date": "ds", "eur_to": "y"}
     )
 
@@ -112,6 +125,7 @@ def backtest(to_currency="MAD"):
             "ds": train_df["date"].iloc[-1] + pd.Timedelta(days=i),
             "ma7": train_df["ma7"].iloc[-1],
             "volatility7": train_df["volatility7"].iloc[-1],
+            "oil_price": train_df["oil_price"].iloc[-1],
         })
 
     future_df = pd.DataFrame(future_rows)
@@ -127,9 +141,9 @@ def backtest(to_currency="MAD"):
     for i in range(len(test_df)):
         details.append({
             "date": test_df["date"].iloc[i].strftime("%Y-%m-%d"),
-            "actual": round(actual[i], 4),
+            "actual": round(float(actual[i]), 4),
             "predicted": round(float(predicted[i]), 4),
-            "error": round(abs(predicted[i] - actual[i]), 4),
+            "error": round(abs(float(predicted[i]) - float(actual[i])), 4),
         })
 
     return {
