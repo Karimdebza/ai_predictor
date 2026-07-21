@@ -194,8 +194,14 @@ class TestAlerts:
         assert "alerts" in data
         assert data["alerts"] == MOCK_ALERTS
 
-    def test_alerts_empty_when_gdelt_unavailable(self, client):
-        """fetch_alerts dégrade en liste vide plutôt que lever une exception."""
+    def test_alerts_empty_when_gdelt_fails(self, client):
+        """fetch_alerts renvoie None sur échec GDELT -> l'endpoint dégrade en liste vide."""
+        with patch("app.fetch_alerts", return_value=None):
+            data = client.get("/alerts?devise=USD").get_json()
+        assert data["alerts"] == []
+
+    def test_alerts_empty_result_is_valid_success(self, client):
+        """fetch_alerts renvoie [] quand GDELT répond mais sans actu pertinente (succès, pas un échec)."""
         with patch("app.fetch_alerts", return_value=[]):
             data = client.get("/alerts?devise=USD").get_json()
         assert data["alerts"] == []
@@ -213,6 +219,14 @@ class TestAlerts:
             client.get("/alerts?devise=USD")
             client.get("/alerts?devise=USD")
             assert mock_fetch.call_count == 1
+
+    def test_alerts_failure_is_not_cached(self, client):
+        """Un échec GDELT (None) ne doit pas verrouiller 'aucune news' pendant 15 min :
+        le prochain appel doit retenter fetch_alerts plutôt que servir un cache figé."""
+        with patch("app.fetch_alerts", return_value=None) as mock_fetch:
+            client.get("/alerts?devise=USD")
+            client.get("/alerts?devise=USD")
+            assert mock_fetch.call_count == 2
 
 
 # ─── CORS ────────────────────────────────────────────────────────────────────

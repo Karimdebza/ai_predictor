@@ -3,6 +3,7 @@ import time
 import pandas as pd
 from prophet import Prophet
 from data import get_fix_history, get_oil_price_history
+from news import fetch_news_volume_history
 import numpy as np
 
 import config
@@ -10,7 +11,7 @@ import config
 _model_cache = {}
 
 
-def _add_features(df, oil_df):
+def _add_features(df, oil_df, news_df):
     df = df.copy()
     df["ma7"] = df["eur_to"].rolling(7).mean()
     df["volatility7"] = df["eur_to"].rolling(7).std()
@@ -22,6 +23,13 @@ def _add_features(df, oil_df):
     else:
         df["oil_price"] = 0.0
     df["oil_price"] = df["oil_price"].fillna(0.0)
+
+    # GDELT ne couvre que les ~90 derniers jours : 0 (pas de signal) avant cette fenêtre.
+    if not news_df.empty:
+        df = df.merge(news_df, on="date", how="left")
+    else:
+        df["news_volume"] = 0.0
+    df["news_volume"] = df["news_volume"].fillna(0.0)
 
     df = df.dropna().reset_index(drop=True)
 
@@ -41,6 +49,7 @@ def _fit_prophet(prophet_df):
     model.add_regressor("ma7")
     model.add_regressor("volatility7")
     model.add_regressor("oil_price")
+    model.add_regressor("news_volume")
     model.fit(prophet_df)
     return model
 
@@ -51,10 +60,11 @@ def train_model(to_currency="MAD"):
 
     fx = get_fix_history(to_currency, start_date, end_date)
     oil = get_oil_price_history(start_date, end_date)
-    df = _add_features(fx, oil)
+    news = fetch_news_volume_history(to_currency, start_date, end_date)
+    df = _add_features(fx, oil, news)
 
     # Prophet attend ds + y
-    prophet_df = df[["date", "eur_to", "ma7", "volatility7", "oil_price"]].rename(
+    prophet_df = df[["date", "eur_to", "ma7", "volatility7", "oil_price", "news_volume"]].rename(
         columns={"date": "ds", "eur_to": "y"}
     )
 
@@ -82,12 +92,13 @@ def predict_future(model, df, days=5):
     future_rows = []
 
     for i in range(1, days + 1):
-        # On projette ma7, volatility7 et oil_price avec les dernières valeurs connues
+        # On projette ma7, volatility7, oil_price et news_volume avec les dernières valeurs connues
         future_rows.append({
             "ds": last_date + pd.Timedelta(days=i),
             "ma7": df["ma7"].iloc[-1],
             "volatility7": df["volatility7"].iloc[-1],
             "oil_price": df["oil_price"].iloc[-1],
+            "news_volume": df["news_volume"].iloc[-1],
         })
 
     future_df = pd.DataFrame(future_rows)
@@ -107,13 +118,14 @@ def backtest(to_currency="MAD"):
 
     fx = get_fix_history(to_currency, start_date, end_date)
     oil = get_oil_price_history(start_date, end_date)
-    df = _add_features(fx, oil)
+    news = fetch_news_volume_history(to_currency, start_date, end_date)
+    df = _add_features(fx, oil, news)
 
     cut_off = len(df) - 7
     train_df = df.iloc[:cut_off].copy()
     test_df = df.iloc[cut_off:].copy()
 
-    prophet_df = train_df[["date", "eur_to", "ma7", "volatility7", "oil_price"]].rename(
+    prophet_df = train_df[["date", "eur_to", "ma7", "volatility7", "oil_price", "news_volume"]].rename(
         columns={"date": "ds", "eur_to": "y"}
     )
 
@@ -126,6 +138,7 @@ def backtest(to_currency="MAD"):
             "ma7": train_df["ma7"].iloc[-1],
             "volatility7": train_df["volatility7"].iloc[-1],
             "oil_price": train_df["oil_price"].iloc[-1],
+            "news_volume": train_df["news_volume"].iloc[-1],
         })
 
     future_df = pd.DataFrame(future_rows)

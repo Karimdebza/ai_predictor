@@ -221,7 +221,13 @@ def alerts():
     if cached is not None:
         return jsonify(cached)
 
-    result = {"alerts": fetch_alerts(to_currency)}
+    alerts_list = fetch_alerts(to_currency)
+    if alerts_list is None:
+        # Échec GDELT (rate-limit, timeout...) : ne pas mettre en cache, pour
+        # ne pas verrouiller "aucune news" pendant 15 min sur un simple accident.
+        return jsonify({"alerts": []})
+
+    result = {"alerts": alerts_list}
     set_cache(cache_key, result, ttl=ALERTS_CACHE_TTL)
     return jsonify(result)
 

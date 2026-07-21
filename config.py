@@ -27,3 +27,4 @@ MAX_DAYS = int(os.getenv("MAX_DAYS", 30))
 FX_API_TIMEOUT = int(os.getenv("FX_API_TIMEOUT", 10))
 
 FRED_API_KEY = os.getenv("FED_API_KEY", "")
+FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY", "")
